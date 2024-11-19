@@ -1,0 +1,13 @@
+[package]
+name = "mk_state"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "^1"
+sha3 = "^0.10"
+# ecdsa = "^0.16"
+k256 = { version="^0.13" , features=["ecdsa", "ecdsa-core", "sha256"] }
+rand_core = "^0.6"
+# ed25519 = "^2.2"
+hex = "^0.4"
