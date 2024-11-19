@@ -1,8 +1,2 @@
-# [package]
-# name = "hello_world"
-# type = "bin"
-# authors = [""]
-# compiler_version = ">=0.36.0"
-
 [workspace]
-members = ["hello_world"]
+members = ["state_transition"]

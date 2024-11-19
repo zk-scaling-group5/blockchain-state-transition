@@ -135,15 +135,15 @@
           # '')
           (writeShellScriptBin "utest" ''cargo test --manifest-path ./mk_state/Cargo.toml -- --nocapture'')
           (writeShellScriptBin "nr" ''
-            nargo test --package hello_world --show-output
+            nargo test --package state_transition --show-output
             # check; execute; prove; verify
           '')
 
-          (writeShellScriptBin "check" ''nargo check --package hello_world'')
-          (writeShellScriptBin "execute" ''nargo execute --package hello_world'')
-          (writeShellScriptBin "prove" ''bb prove -b ./target/hello_world.json -w ./target/hello_world.gz -o ./target/proof'')
+          (writeShellScriptBin "check" ''nargo check --package state_transition'')
+          (writeShellScriptBin "execute" ''nargo execute --package state_transition'')
+          (writeShellScriptBin "prove" ''bb prove -b ./target/state_transition.json -w ./target/state_transition.gz -o ./target/proof'')
           (writeShellScriptBin "verify" ''
-            bb write_vk -b ./target/hello_world.json -o ./target/vk
+            bb write_vk -b ./target/state_transition.json -o ./target/vk
             bb verify -k ./target/vk -p ./target/proof
           '')
           (writeShellScriptBin "inputs" ''head -c 32 ./target/proof | od -An -v -t x1 | tr -d ''' \n''' '')

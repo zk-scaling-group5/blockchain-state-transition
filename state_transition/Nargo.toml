@@ -1,5 +1,5 @@
 [package]
-name = "hello_world"
+name = "state_transition"
 type = "bin"
 authors = [""]
 compiler_version = ">=0.36.0"
