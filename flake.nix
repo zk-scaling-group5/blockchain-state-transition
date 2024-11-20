@@ -133,7 +133,7 @@
           #   curl -L bbup.dev | bash
           #   bbup
           # '')
-          (writeShellScriptBin "utest" ''cargo test --manifest-path ./mk_state/Cargo.toml -- --nocapture'')
+          (writeShellScriptBin "utest" ''cargo test --manifest-path ./mk_static_inputs/Cargo.toml -- --nocapture'')
           (writeShellScriptBin "nr" ''
             nargo test --package state_transition --show-output
             # check; execute; prove; verify

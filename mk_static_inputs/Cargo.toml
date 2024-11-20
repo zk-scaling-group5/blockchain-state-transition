@@ -1,5 +1,5 @@
 [package]
-name = "mk_state"
+name = "mk_static_inputs"
 version = "0.1.0"
 edition = "2021"
 

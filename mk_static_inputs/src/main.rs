@@ -41,23 +41,28 @@ impl std::fmt::Debug for AccountBalance {
 
 #[derive(Clone)]
 pub struct K256Hash {
-    pub hash: Vec<u8>,
+    pub bytes: [u8; 32],
 }
 impl K256Hash {
     pub fn from_slice(slice: &[u8]) -> Self {
         K256Hash {
-            hash: slice.to_vec(),
+            bytes: slice.try_into().expect("slice length should be 32"),
         }
     }
 }
 impl Hashable for K256Hash {
     fn bytes_to_hash(&self) -> Vec<u8> {
-        self.hash.clone()
+        self.bytes.to_vec()
+    }
+}
+impl std::fmt::Display for K256Hash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.bytes))
     }
 }
 impl std::fmt::Debug for K256Hash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.hash))
+        write!(f, "{:?}", &self.bytes)
     }
 }
 
@@ -152,6 +157,9 @@ impl StateTree {
             })
             .collect()
     }
+    pub fn root(&self) -> K256Hash {
+        self.hash_tree.last().unwrap().first().unwrap().clone()
+    }
 }
 impl std::fmt::Debug for StateTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -196,7 +204,6 @@ impl Identity {
             amount,
         };
         let tx = transaction_unsigned.sign(&self.privkey)?;
-        dbg!(&tx);
         Ok(tx)
     }
 }
@@ -298,23 +305,22 @@ pub mod tests {
             pubkey: ALICE.pubkey(),
             balance: 100,
         };
-        let mut tree = StateTree::from_balances(&[alice]);
-        // dbg!(&tree);
+        let mut state = StateTree::from_balances(&[alice]);
+        dbg!("INIT STATE", &state.root());
 
         let transactions = vec![
             ALICE.transfer(BOB.pubkey(), 10)?,
             BOB.transfer(CHARLIE.pubkey(), 8)?,
         ];
         for tx in transactions {
-            tree.apply_transaction(tx)?;
+            state.apply_transaction(tx)?;
         }
+        dbg!("NEW STATE", &state.root());
 
-        // dbg!(&tree);
-
-        assert_eq!(tree.leaves.len(), 3);
-        assert_eq!(tree.leaves.get(&ALICE.pubkey()), Some(&90));
-        assert_eq!(tree.leaves.get(&BOB.pubkey()), Some(&2));
-        assert_eq!(tree.leaves.get(&CHARLIE.pubkey()), Some(&8));
+        assert_eq!(state.leaves.len(), 3);
+        assert_eq!(state.leaves.get(&ALICE.pubkey()), Some(&90));
+        assert_eq!(state.leaves.get(&BOB.pubkey()), Some(&2));
+        assert_eq!(state.leaves.get(&CHARLIE.pubkey()), Some(&8));
 
         Ok(())
     }

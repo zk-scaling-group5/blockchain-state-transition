@@ -4,11 +4,25 @@ use std::hash::poseidon2::Poseidon2Hasher;
 use std::hash::Hash;
 use std::hash::keccak256;
 
-fn main(prev_state:StateTree,transactions: BoundedVec<Transaction,8>, next_state_root:K256Hash) {
-    // assert(x != y);
-    // TODO assert transactions are valid in order
-    // TODO apply transactions
-    // TODO recompute root, assert equal
+fn main(prev_state:StateTree, transactions:BoundedVec<Transaction,8>, next_state_root:K256Hash) {
+    let mut state = prev_state;
+    // assert transactions are valid in order, apply them
+    let new_state = {
+        let mut state = prev_state;
+        for tx in 0..transactions.len() {
+            let tx = transactions.get(tx);
+            state.apply_transaction_no_update_hashes(tx);
+        }
+        state.update_hashes();
+        state
+    };
+
+    println(new_state.account_balances());
+    println(new_state.hash_tree);
+
+    // recompute root, assert equal to expected new root
+    let new_state_root = new_state.root();
+    assert(new_state_root == next_state_root);
 }
 
 
@@ -26,17 +40,14 @@ impl StateTree {
             hash_tree: BoundedVec::new(),
         }.with_update_hashes()
     }
-    // pub fn from_balances(balances: [AccountBalance]) -> Self {
-    //             StateTree {
-    //         leaves: leaves
-    //             .iter()
-    //             .map(|ab| (ab.address.clone(), ab.balance))
-    //             .collect::<BTreeMap<_, _>>(),
-    //         hash_tree: Vec::new(),
-    //     }
-    //     .with_update_hashes()
-    // }
-    
+
+    pub fn account_balances(self) -> BoundedVec<AccountBalance,4> {
+        self.leaves.entries().map(|(pubkey,balance):(Pubkey,u8)| AccountBalance {pubkey, balance})
+    }
+    pub fn root(self) -> K256Hash {
+        self.hash_tree.get(self.hash_tree.len()-1).get(0)
+    }
+
     pub fn update_hashes(&mut self) {
         // we have 2 hash layers max for a 4-wide tree
         let mut layer_1: BoundedVec<K256Hash,2>  = BoundedVec::new();
@@ -45,17 +56,16 @@ impl StateTree {
             if index*2+1 < self.account_balances().len() {
                 let first = self.account_balances().get(index*2);
                 let second = self.account_balances().get(index*2+1);
-                // println(first);
-                // println(second);
                 let to_hash = first.bytes_to_hash().as_slice().append(second.bytes_to_hash().as_slice());
-                let hash = K256Hash::hash::<18>(to_hash.as_array());
+                // 1 AccountBalance is 34 bytes, 2 are 68
+                let hash = K256Hash::hash::<68>(to_hash.as_array());
                 layer_1.push(hash);
             } 
             // else take only 1 if there is only 1 left
             else if index*2 < self.account_balances().len() {
                 let first = self.account_balances().get(index*2);
-                // println(first);
                 let to_hash = first.bytes_to_hash().as_slice();
+                // 1 AccountBalance is 34 bytes
                 let hash = K256Hash::hash::<34>(to_hash.as_array());
                 layer_1.push(hash);
             }   
@@ -66,22 +76,25 @@ impl StateTree {
             self.hash_tree.set(0, layer_1);
         }
 
-        let mut layer_2:BoundedVec<K256Hash,2> = BoundedVec::new();
+        // we use a 2-long vec to keep the same type as before, but we only have 1 hash to store on this layer (for a 4-wide tree)
+        let mut layer_2: BoundedVec<K256Hash,2> = BoundedVec::new();
         for i in 0..MAX_ACCOUNTS/4 {
             // take 2 if there are still 2
             if i*2+1 < self.account_balances().len() {
-                let first = self.account_balances().get(i*2);
-                let second = self.account_balances().get(i*2+1);
+                let first: K256Hash = layer_1.get(i*2);
+                let second: K256Hash = layer_1.get(i*2+1);
                 let to_hash = first.bytes_to_hash().as_slice().append(second.bytes_to_hash().as_slice());
-                let hash = K256Hash::hash::<18>(to_hash.as_array());
+                // 1 K256Hash is 32 bytes, 2 are 64
+                let hash = K256Hash::hash::<64>(to_hash.as_array());
                 layer_2.push(hash);
             }
             // else take only 1 if there is only 1 left
             else if i*2 < self.account_balances().len() {
-                let first = self.account_balances().get(i*2);
+                let first: K256Hash = layer_1.get(i*2);
                 let to_hash = first.bytes_to_hash().as_slice();
-                let hash = K256Hash::hash::<34>(to_hash.as_array());
-                layer_1.push(hash);
+                // 1 K256Hash is 32 bytes
+                let hash = K256Hash::hash::<32>(to_hash.as_array());
+                layer_2.push(hash);
             }  
         }
         if self.hash_tree.len() < 2 {
@@ -94,14 +107,19 @@ impl StateTree {
         self.update_hashes();
         self
     }
+    pub fn apply_transaction_no_update_hashes(&mut self, transaction:Transaction)  {
+        // check transaction valid for prev state (signature, balance)
+        let prev_sender_balance = self.leaves.get(transaction.from).unwrap_or(0);
+        let prev_recver_balance = self.leaves.get(transaction.to).unwrap_or(0);
 
-    pub fn account_balances(self) -> BoundedVec<AccountBalance,4> {
-        self.leaves.entries().map(|(pubkey,balance):(Pubkey,u8)| AccountBalance {pubkey, balance})
-    }
+        let new_sender_balance = prev_sender_balance - transaction.amount;
+        assert(new_sender_balance >= 0);
+        // TODO verify signature
+        let new_recver_balance = prev_recver_balance + transaction.amount;
 
-    pub fn apply_transaction_no_update_hashes(&mut self, transaction:Transaction) {
-        // TODO check transaction valid for prev state (signature, balance)
-        // TODO update leaf
+        // update balances
+        self.leaves.insert(transaction.from, new_sender_balance);
+        self.leaves.insert(transaction.to, new_recver_balance);
     }
 }
 
@@ -110,44 +128,27 @@ pub trait Hashable<let N: u32> {
     fn bytes_to_hash(self) -> [u8; N];
 }
 
+#[derive(Eq)]
 pub struct K256Hash {
-    pub hash: [u8;32],
+    bytes: [u8;32],
 }
 impl K256Hash {
+    pub fn from_bytes(bytes: [u8;32]) -> Self {
+        K256Hash { bytes }
+    }
     pub fn hash<let N:u32>(bytes_to_hash: [u8;N]) -> Self {
         K256Hash {
-            hash: keccak256(bytes_to_hash,N)
+            bytes: keccak256(bytes_to_hash, N)
         }
     }
 }
-
-// #[derive(Eq,Hash)]
-// pub struct Addr {
-//     pub address: [u8;8]
-// }
-// impl Addr {
-//     pub fn new(addr: str<8>) -> Self {
-//         Addr {
-//             address: addr.as_bytes(),
-//         }
-//     }
-// }
-
-
-
-// pub struct Address {
-//     // address is the 20 last bytes of the keccak256 hash of the pubkey
-//     pub address: [u8;20]
-// }
-// // impl Address {
-// //     pub fn new(address:str<32>) -> Self {
-// //         address
-// //     }
-// // }
-
-pub struct PubKey {
-    bytes: [u8; 32]
+impl Hashable<32> for K256Hash {
+    fn bytes_to_hash(self) -> [u8;32] {
+        self.bytes
+    }
 }
+
+
 
 pub struct AccountBalance{
     pubkey: Pubkey,
@@ -160,24 +161,13 @@ impl Hashable<34> for AccountBalance {
 }
 
 
-
-
 pub struct Transaction {
     from: Pubkey,
     to: Pubkey,
     amount: u8,
     signature: Signature,
 }
-impl Transaction {
-    // pub fn from_bytes(from:[u8;33],to:[u8;33], amount:u8, signature:[u8;64]) -> Self {
-    //     Transaction {
-    //         from: Pubkey::from_bytes(from),
-    //         to: Pubkey::from_bytes(to),
-    //         amount,
-    //         signature: Signature::from_bytes(signature),
-    //     }
-    // }
-}
+
 
 #[derive(Eq,Hash)]
 pub struct Pubkey {
@@ -205,37 +195,21 @@ global ALICE: Pubkey = Pubkey::from_bytes([2, 110, 38, 105, 168, 89, 232, 235, 1
 global BOB: Pubkey = Pubkey::from_bytes([3, 253, 51, 121, 70, 54, 180, 41, 165, 31, 167, 187, 11, 130, 247, 181, 17, 93, 152, 143, 122, 200, 168, 195, 218, 143, 1, 241, 244, 79, 49, 150, 127]);
 #[cfg(test)]
 global CHARLIE: Pubkey = Pubkey::from_bytes([2, 55, 19, 219, 4, 82, 15, 223, 177, 48, 7, 39, 48, 228, 48, 59, 27, 104, 59, 227, 181, 252, 187, 113, 254, 31, 76, 187, 136, 59, 88, 66, 124]);
-#[cfg(test)]
-global TRANSACTIONS: BoundedVec<Transaction, 8> = {
-    let mut vec = BoundedVec::new();
-    // signatures are pre-computed in Rust since we can't call arbitraty code in Noir
-    vec.push(Transaction { from: ALICE, to: BOB, amount: 10, signature: Signature::from_bytes([230, 240, 213, 131, 66, 121, 220, 174, 250, 143, 166, 17, 33, 216, 117, 100, 48, 75, 148, 187, 116, 94, 65, 147, 150, 139, 215, 253, 55, 238, 74, 226, 88, 190, 76, 8, 155, 41, 227, 53, 72, 188, 157, 93, 247, 83, 42, 214, 151, 220, 204, 133, 46, 113, 175, 97, 79, 200, 121, 105, 96, 15, 237, 89]) });
-    vec.push(Transaction { from: BOB, to: CHARLIE, amount: 8, signature: Signature::from_bytes([36, 45, 215, 238, 39, 246, 139, 192, 193, 41, 185, 205, 161, 60, 248, 96, 129, 223, 5, 157, 114, 69, 59, 219, 24, 91, 224, 142, 21, 108, 220, 107, 59, 170, 112, 155, 131, 144, 2, 82, 18, 205, 223, 167, 68, 51, 212, 239, 196, 90, 52, 114, 104, 182, 78, 47, 250, 246, 246, 176, 252, 237, 17, 248]) });
-    vec
-};
-#[cfg(test)]
-global NEXT_STATE_ROOT = {
-    let mut prev_state = StateTree::genesis();
-
-    let updated_state = {
-        let mut state = prev_state.clone();
-        for tx in TRANSACTIONS {
-            state.apply_transaction(tx);
-        }
-        state.update_hashes();
-    };
-
-    updated_state.root 
-};
-
 
 
 #[test]
 fn test_main() {
     let prev_tree = StateTree::genesis();
 
-    main(prev_tree, TRANSACTIONS, NEXT_STATE_ROOT);
+    let transactions = {
+        let mut vec = BoundedVec::new();
+        // signatures are pre-computed in Rust since we can't call arbitrary code in Noir
+        vec.push(Transaction { from: ALICE, to: BOB, amount: 10, signature: Signature::from_bytes([230, 240, 213, 131, 66, 121, 220, 174, 250, 143, 166, 17, 33, 216, 117, 100, 48, 75, 148, 187, 116, 94, 65, 147, 150, 139, 215, 253, 55, 238, 74, 226, 88, 190, 76, 8, 155, 41, 227, 53, 72, 188, 157, 93, 247, 83, 42, 214, 151, 220, 204, 133, 46, 113, 175, 97, 79, 200, 121, 105, 96, 15, 237, 89]) });
+        vec.push(Transaction { from: BOB, to: CHARLIE, amount: 8, signature: Signature::from_bytes([36, 45, 215, 238, 39, 246, 139, 192, 193, 41, 185, 205, 161, 60, 248, 96, 129, 223, 5, 157, 114, 69, 59, 219, 24, 91, 224, 142, 21, 108, 220, 107, 59, 170, 112, 155, 131, 144, 2, 82, 18, 205, 223, 167, 68, 51, 212, 239, 196, 90, 52, 114, 104, 182, 78, 47, 250, 246, 246, 176, 252, 237, 17, 248]) });
+        vec
+    };
 
-    // Uncomment to make test fail
-    // main(1, 1);  
+    let NEXT_STATE_ROOT = K256Hash::from_bytes([25, 32, 24, 252, 22, 132, 90, 190, 254, 169, 198, 253, 144, 67, 83, 168, 37, 61, 32, 32, 68, 195, 59, 226, 44, 193, 194, 108, 115, 100, 130, 192]);
+
+    main(prev_tree, transactions, NEXT_STATE_ROOT);
 }
