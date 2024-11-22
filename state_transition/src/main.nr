@@ -4,21 +4,40 @@ use std::hash::poseidon2::Poseidon2Hasher;
 use std::hash::Hash;
 use std::hash::keccak256;
 
-fn main(prev_state:StateTree, transactions:BoundedVec<Transaction,8>, next_state_root:K256Hash) {
-    let mut state = prev_state;
+fn main(
+    // init_state:StateTree, 
+    init_state_root:pub K256Hash, 
+    transactions:pub BoundedVec<Transaction,8>, 
+    next_state_root:pub K256Hash
+) {
+    let init_state = StateTree::genesis();
+    // println(init_state);
+    // println(init_state_root);
+    println(transactions);
+    println(next_state_root);
+
+
+    let mut state = init_state;
+    state.update_hashes();
+    assert(state.root() == init_state_root);
+
+
+
     // assert transactions are valid in order, apply them
     let new_state = {
-        let mut state = prev_state;
-        for tx in 0..transactions.len() {
-            let tx = transactions.get(tx);
-            state.apply_transaction_no_update_hashes(tx);
+        let mut state = init_state;
+        for i_tx in 0..transactions.max_len() {
+            if i_tx < transactions.len() {
+                let tx = transactions.get(i_tx);
+                state.apply_transaction_no_update_hashes(tx);
+            }
         }
         state.update_hashes();
         state
     };
 
-    println(new_state.account_balances());
-    println(new_state.hash_tree);
+    // println(new_state.account_balances());
+    // println(new_state.hash_tree);
 
     // recompute root, assert equal to expected new root
     let new_state_root = new_state.root();
@@ -199,7 +218,8 @@ global CHARLIE: Pubkey = Pubkey::from_bytes([2, 55, 19, 219, 4, 82, 15, 223, 177
 
 #[test]
 fn test_main() {
-    let prev_tree = StateTree::genesis();
+    let init_state = StateTree::genesis();
+    let init_root = init_state.root();
 
     let transactions = {
         let mut vec = BoundedVec::new();
@@ -211,5 +231,7 @@ fn test_main() {
 
     let NEXT_STATE_ROOT = K256Hash::from_bytes([25, 32, 24, 252, 22, 132, 90, 190, 254, 169, 198, 253, 144, 67, 83, 168, 37, 61, 32, 32, 68, 195, 59, 226, 44, 193, 194, 108, 115, 100, 130, 192]);
 
-    main(prev_tree, transactions, NEXT_STATE_ROOT);
+    main(
+        // init_state, 
+        init_root, transactions, NEXT_STATE_ROOT);
 }

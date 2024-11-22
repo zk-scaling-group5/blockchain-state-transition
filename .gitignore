@@ -3,6 +3,7 @@ debug/
 **/target/
 **/*.rs.bk
 tarpaulin-report.html
+**/Cargo.lock
 
 # JS
 **/node_modules/

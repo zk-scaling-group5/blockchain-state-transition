@@ -30,7 +30,7 @@ graph TD
         H12["H12"]
         H3["H3"]
         
-        A["Alice<br/>PubKey: 0x1234<br/>Balance: 100"]
+        A["Alice<br/>PubKey: 0x1234<br/>Balance: 50"]
         B["Bob<br/>PubKey: 0x5678<br/>Balance: 30"]
         C["Charlie<br/>PubKey: 0x9ABC<br/>Balance: 20"]
         
@@ -65,6 +65,18 @@ We want to generate a proof that the state transition function was applied corre
     - Sender had enough balance to send
     - Sender's signature is valid
 - When updating balances with the input transactions, I get the expected new state root hash
+
+## Why ?
+
+The proof is much smaller than the state (and state transition) it proves, so we can:
+- post the proof on-chain (to an existing layer-1 EVM chain like Ethereum)
+- have a layer-1 contract verify the proof (when posting)
+- the state (balances) and transactions are private inputs:
+    - they can stay "off-chain" (at least not stored on the layer-1): we store them on the layer 2, or in a DA (data availability) solution
+- only the roots and proof are posted to the layer-1 (both short, costs little)
+
+=> mimicks the way ZK-rollups scale Ethereum
+§
 
 ## What are the inputs to the proof ?
 

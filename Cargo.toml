@@ -1,0 +1,4 @@
+[workspace]
+members = [
+    "mk_static_inputs"
+]

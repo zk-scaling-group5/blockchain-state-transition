@@ -1,6 +1,7 @@
 use k256::ecdsa::signature::Signer;
 use k256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use rand_core::OsRng;
+use serde::{ser::SerializeSeq, Serialize};
 use sha3::Keccak256;
 use std::collections::BTreeMap;
 
@@ -39,7 +40,7 @@ impl std::fmt::Debug for AccountBalance {
     }
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Clone)]
 pub struct K256Hash {
     pub bytes: [u8; 32],
 }
@@ -66,7 +67,7 @@ impl std::fmt::Debug for K256Hash {
     }
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Clone)]
 pub struct StateTree {
     leaves: BTreeMap<Pubkey, u8>,  // map makes it easier to update a leaf
     hash_tree: Vec<Vec<K256Hash>>, // layers of hashes above leaves, to authenticate state
@@ -286,6 +287,20 @@ impl std::fmt::Display for Pubkey {
         write!(f, "Pubkey({})", hex::encode(&self.0.to_sec1_bytes()))
     }
 }
+impl serde::Serialize for Pubkey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.0.to_sec1_bytes().to_vec();
+
+        let mut seq = serializer.serialize_seq(Some(bytes.len()))?;
+        for byte in bytes {
+            seq.serialize_element(&byte)?;
+        }
+        seq.end()
+    }
+}
 
 #[cfg(test)]
 pub mod tests {
@@ -301,12 +316,15 @@ pub mod tests {
 
     #[test]
     fn it_works() -> anyhow::Result<()> {
+        std::env::set_current_dir("..")?;
+
         let alice = AccountBalance {
             pubkey: ALICE.pubkey(),
             balance: 100,
         };
         let mut state = StateTree::from_balances(&[alice]);
-        dbg!("INIT STATE", &state.root());
+        println!("INIT STATE {}", serde_json::to_string(&state)?);
+        dbg!("INIT STATE ROOT", &state.root());
 
         let transactions = vec![
             ALICE.transfer(BOB.pubkey(), 10)?,
