@@ -13,8 +13,8 @@ fn main(
     let init_state = StateTree::genesis();
     // println(init_state);
     // println(init_state_root);
-    println(transactions);
-    println(next_state_root);
+    // println(transactions);
+    // println(next_state_root);
 
 
     let mut state = init_state;
